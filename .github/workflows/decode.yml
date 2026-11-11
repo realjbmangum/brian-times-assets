@@ -1,0 +1,43 @@
+name: decode incoming images
+on:
+  push:
+    branches: [main]
+    paths: ["incoming/**.b64"]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: decode
+  cancel-in-progress: false
+jobs:
+  decode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode base64 files into hero/
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p hero
+          changed=0
+          for f in incoming/*.b64; do
+            name="$(basename "$f" .b64)"
+            case "$name" in
+              hero-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+              *) echo "skip unexpected name: $name"; continue ;;
+            esac
+            base64 -d "$f" > "hero/$name.jpg"
+            # only keep real JPEGs
+            if [ "$(head -c 3 "hero/$name.jpg" | od -An -tx1 | tr -d ' ')" != "ffd8ff" ]; then
+              echo "not a JPEG: $f"; rm -f "hero/$name.jpg"; continue
+            fi
+            git rm -q "$f"
+            git add "hero/$name.jpg"
+            changed=1
+          done
+          if [ "$changed" = 1 ]; then
+            git config user.name "brian-times-bot"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "Decode hero image(s)"
+            git push
+          fi
